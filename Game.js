@@ -31,8 +31,8 @@ exports.game = {
 	'turnStart': null,
 	'logFile': null,
 	'start': function(botInput) {
-		fs.unlinkSync('../ants_js_tools/game_logs/replay.0.txt');
 		if(this.debug){
+			fs.unlinkSync('../ants_js_tools/game_logs/replay.0.txt');
 			this.logFile = fs.createWriteStream('../ants_js_tools/game_logs/replay.0.txt', {'flags': 'a'});
 		}
 		this.log("Writing Output");

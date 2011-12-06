@@ -1,5 +1,3 @@
-//var game = require('./Game').game;
-
 var antID = 0;
 
 exports.Ant = function(row,col){
