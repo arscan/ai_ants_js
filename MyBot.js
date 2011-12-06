@@ -283,7 +283,7 @@ var bot = {
 						
 		//this.buildMap(game.food,exploreMap,5,true,function(val){return Math.max(0,val-1);},function(oldval,newval){return oldval+newval},function(row,col){return(game.map[row][col].type !== game.landTypes.WATER && game.map[row][col].type !== game.landTypes.UNKNOWN)});
 		
-		
+		/*
 		for(var c=0;c<game.config.cols;c++){
 			for(var r=0;r<game.config.rows;r++){
 				if(this.exploreMap[r][c] > 0){
@@ -292,6 +292,7 @@ var bot = {
 				}
 			}
 		}
+		*/
 		
 		
 		for (var i in game.myAnts) {

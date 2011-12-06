@@ -27,7 +27,7 @@ exports.game = {
 		'UNKNOWN': 5
 	},
 	'inputHills':{},
-	'debug': true,
+	'debug': false,
 	'turnStart': null,
 	'logFile': null,
 	'start': function(botInput) {
