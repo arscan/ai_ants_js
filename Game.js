@@ -1,5 +1,7 @@
 var fs = require('fs');
 var Ant = require('./Ant').Ant;
+var util = require('util');
+
 
 exports.game = {
 	'bot': null,
@@ -14,6 +16,8 @@ exports.game = {
 	'vision': false,
 	'visionOffsets': false,
 	'tiles':{},
+	'enemyHills':{},
+	'myHills':{},
 	'landTypes': {
 		'LAND': 0,
 		'DEAD': 1,
@@ -22,13 +26,15 @@ exports.game = {
 		'FOOD': 4,
 		'UNKNOWN': 5
 	},
+	'inputHills':{},
 	'debug': true,
 	'turnStart': null,
 	'logFile': null,
 	'start': function(botInput) {
 		fs.unlinkSync('../ants_js_tools/game_logs/replay.0.txt');
-		this.logFile = fs.createWriteStream('../ants_js_tools/game_logs/replay.0.txt', {'flags': 'a'});
-	
+		if(this.debug){
+			this.logFile = fs.createWriteStream('../ants_js_tools/game_logs/replay.0.txt', {'flags': 'a'});
+		}
 		this.log("Writing Output");
 		this.bot = botInput;
 		var partialline = "";
@@ -83,8 +89,38 @@ exports.game = {
 				}
 			}
 			
-		
+			// REMOVE ANY ENEMY HILLS THAT I DESTROYED
+			for(var hI in this.enemyHills){
+				var h = this.enemyHills[hI];
+				if(!this.inputHills[h.row + "-" + h.col] && this.visible(h.row,h.col)){
+					this.log("no more enemy hill at " + h.row + "-" + h.col);
+					delete this.enemyHills[hI];
+				}
 				
+			}
+			
+			for(var hI in this.myHills){
+				var h = this.myHills[hI];
+				if(!this.inputHills[h.row + "-" + h.col] && this.visible(h.row,h.col)){
+					this.log("no more MY hill at " + h.row + "-" + h.col);
+					delete this.myHills[hI];
+				}
+				
+			}
+			/*
+			for(var c=0;c<this.config.cols;c++){
+				for(var r=0;r<this.config.rows;r++){
+					if(this.map[r][c].type == this.landTypes.UNKNOWN){
+						this.viz_setFillColor(255,0,0,.7);
+					} else if(this.map[r][c].type == this.landTypes.WATER){
+						this.viz_setFillColor(0,255,0,.7);
+					} else if(this.map[r][c].type == this.landTypes.LAND){
+						this.viz_setFillColor(0,0,255,.7);
+					}
+					this.viz_tile({"row":r,"col":c},0);
+				}
+			}
+			*/
 			this.bot.onTurn();
 			return;
 		} else if(line[0] === 'end') {
@@ -106,7 +142,7 @@ exports.game = {
 						}
 					}
 				}
-				this.hills = [];
+				this.inputHills = {};
 				this.ants = [];
 				this.food = [];
 				this.dead = [];
@@ -155,11 +191,19 @@ exports.game = {
 							this.log("killing my ant at " + row + " " + col);
 						
 						} else {
-							this.map[row][col] = this.landTypes.LAND;
+							this.map[row][col].type = this.landTypes.LAND;
 						}
 						this.dead.push(obj)
 					} else  if (line[0] === 'h') {
-						this.hills.push(obj);
+						this.inputHills[obj.row + "-" + obj.col] = obj;
+						if(obj.owner > 0){
+							this.log("found a hill at " + util.inspect(obj));
+							this.enemyHills[obj.row + "-" + obj.col] = obj;
+						} else {
+							this.myHills[obj.row + "-" + obj.col] = obj;
+							this.log("found my hill at " + util.inspect(obj));
+						}
+						
 					}
 				}
 			}
@@ -178,10 +222,7 @@ exports.game = {
 		}
 	},
 	'finishTurn': function() {
-		for(a in this.myAnts){
-			this.log(a);
-		}
-	
+		
 		for (var i = 0, len = this.orders.length; i < len; ++i) {
 			var order = this.orders[i];
 			fs.writeSync(process.stdout.fd, 'o '+order.row+' '+order.col+' '+order.direction+'\n');
@@ -192,7 +233,9 @@ exports.game = {
 	},
 	
 	'log': function(out){
-		this.logFile.write("[" + this.timeLeft() + "] " + out + "\r\n");	
+		if(this.debug){
+			this.logFile.write("[" + this.timeLeft() + "] " + out + "\r\n");	
+		}
 	},
 	
 	/* PUT ALL THESE IN MAP */
@@ -380,10 +423,7 @@ exports.game = {
 		*/
 		
 		for (var antI in this.myAnts) {
-			this.log("anti " + antI);
 			var ant = this.myAnts[antI];
-			this.log("antt " + ant);
-			
 			try{
 			for (var visionOffsetI in this.visionOffsets) {
 				var vo = this.visionOffsets[visionOffsetI];
@@ -485,7 +525,7 @@ exports.game = {
 	'killAnt' : function(ant){
 		delete this.myAntAtTile[ant.row + '-' + ant.col];
 		delete this.myAnts[ant];
-		this.log("killing ant at " + ant.row + "-" + ant.col);
+		this.log("killing ant at " + ant.row + "-" + ant.col + " with id " + ant + " which is now " + this.myAnts[ant]);
 	},
 	'antAtTile' : function(row,col){
 		return this.myAntAtTile[row + '-' + col];

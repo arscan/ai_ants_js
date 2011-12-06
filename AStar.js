@@ -23,13 +23,31 @@ var game = require('./Game').game;
 
 var astar = {
 	
-	init: function() {
 	
+    
+    search: function(s, e, allowUnknown, maxdist, heuristic) {
+        if(!maxdist){
+			maxdist = 1000;
+		}
+		
+		//game.log("maxdist is " + maxdist);
+		heuristic = heuristic || astar.manhattan;
+		if(!allowUnknown){
+			allowUnknown = false;
+		} else {
+			allowUnknown = true;
+		}
+		
 		var _search = [];
 		for(var r=0;r<game.config.rows;r++){
 			_search[r] = [];
 			for(var c=0;c<game.config.cols;c++){
-				_search[r][c]=!game.passable(r,c);
+				if(allowUnknown){
+					_search[r][c] = game.map[r][c].type == game.landTypes.WATER;
+				} else {
+					_search[r][c] = game.map[r][c].type == game.landTypes.WATER || game.map[r][c].type == game.landTypes.UNKNOWN;
+				}
+				//_search[r][c]=!game.passable(r,c);
 			}
 		}
 		this.grid = new AStarGraph(_search);
@@ -49,26 +67,6 @@ var astar = {
             }
         }
 		
-	
-	
-	},
-    /*init: function(grid) {
-        for(var x = 0, xl = grid.length; x < xl; x++) {
-            for(var y = 0, yl = grid[x].length; y < yl; y++) {
-            	var node = grid[x][y];
-                node.f = 0;
-                node.g = 0;
-                node.h = 0;
-                node.visited = false;
-                node.closed = false;
-                node.debug = "";
-                node.parent = null;
-            }
-        }
-    },
-	*/
-    search: function(s, e, heuristic) {
-        heuristic = heuristic || astar.manhattan;
 		
 		var start = this.grid.nodes[s.row][s.col];
 		var end = this.grid.nodes[e.row][e.col];
@@ -90,6 +88,8 @@ var astar = {
 				//game.log("Done AStarring! " + end);
 			    var curr = currentNode;
 			    var ret = [];
+				curr.row = curr.x;
+				curr.col = curr.y;
 			    while(curr.parent) {
 				    ret.push(curr);
 				    curr = curr.parent;
@@ -120,8 +120,9 @@ var astar = {
 			    var gScore = currentNode.g + 1;
 			    var beenVisited = neighbor.visited;
 
-			    if(!beenVisited || gScore < neighbor.g) {
+			    if(gScore < maxdist && (!beenVisited || gScore < neighbor.g )) {
 
+					//game.log("gscore is less... " + gScore + " than maxdist " + maxdist);
 				    // Found an optimal (so far) path to this node.  Take score for node to see how good it is.
 				    neighbor.visited = true;
 				    neighbor.parent = currentNode;
