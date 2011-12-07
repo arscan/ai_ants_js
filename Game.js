@@ -1,7 +1,7 @@
 var fs = require('fs');
 var Ant = require('./Ant').Ant;
 var util = require('util');
-
+var path = require('path');
 
 exports.game = {
 	'bot': null,
@@ -32,7 +32,10 @@ exports.game = {
 	'logFile': null,
 	'start': function(botInput) {
 		if(this.debug){
-			fs.unlinkSync('../ants_js_tools/game_logs/replay.0.txt');
+			var logdir = '../ants_js_tools/game_logs/replay.0.txt';
+			if(path.existsSync(logdir)){
+				fs.unlinkSync(logdir);
+			}
 			this.logFile = fs.createWriteStream('../ants_js_tools/game_logs/replay.0.txt', {'flags': 'a'});
 		}
 		this.log("Writing Output");
@@ -68,7 +71,7 @@ exports.game = {
 					if (col === 0) {
 						this.map[row] = [];
 					}
-					this.map[row][col] = {'row': row, 'col':col,'type': this.landTypes.UNKNOWN, 'lastseen':5};
+					this.map[row][col] = {'row': row, 'col':col,'type': this.landTypes.UNKNOWN, 'lastseen':5, 'lastreachable':5};
 					//this.tiles[row + '-' + col] = {'row': row, 'col':col, 'type': this.landTypes.UNKNOWN, 'lastseen':5};
 				}
 			}
@@ -138,6 +141,7 @@ exports.game = {
 						if (this.map[row][col].type !== this.landTypes.WATER && this.map[row][col].type !== this.landTypes.UNKNOWN) {
 							this.map[row][col].type = this.landTypes.LAND; //{'row': row, 'col':col, 'type': this.landTypes.LAND};
 							this.map[row][col].lastseen += 1;
+							this.map[row][col].lastreachable += 1;
 							//this.tiles[row + '-' + col].type = this.landTypes.LAND;
 						}
 					}
@@ -146,6 +150,7 @@ exports.game = {
 				this.ants = [];
 				this.food = [];
 				this.dead = [];
+				this.enemyAnts = [];
 			}
 		} else {
 			if (this.currentTurn === 0 && line[0] !== 'ready') {
@@ -244,6 +249,10 @@ exports.game = {
 	'tileInDirection': function(row, col, direction) {
 		var rowd = 0;
 		var cold = 0;
+		if (direction === 'A'){
+			return this.map[row][col];
+		}
+		
 		if (direction === 'N') {
 			rowd = -1;
 		} else if (direction === 'E') {
@@ -354,6 +363,11 @@ exports.game = {
 		var dr = Math.min(Math.abs(fromRow - toRow), this.config.rows - Math.abs(fromRow - toRow));
 		var dc = Math.min(Math.abs(fromCol - toCol), this.config.cols - Math.abs(fromCol - toCol));
 		return Math.sqrt((dr * dr) + (dc * dc));
+	},
+	'distance2': function(fromRow, fromCol, toRow, toCol) {
+		var dr = Math.min(Math.abs(fromRow - toRow), this.config.rows - Math.abs(fromRow - toRow));
+		var dc = Math.min(Math.abs(fromCol - toCol), this.config.cols - Math.abs(fromCol - toCol));
+		return (dr * dr) + (dc * dc);
 	},
 	// PUT IN MAP
 	'direction': function(fromRow, fromCol, toRow, toCol) {

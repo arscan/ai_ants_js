@@ -61,5 +61,10 @@ exports.Ant.prototype.getDestination = function(){
 
 }
 
+exports.Ant.prototype.clearPath = function(){
+	this.path = [];
+	this.currentPathIndex =0;
+}
+
 
 
