@@ -300,7 +300,7 @@ var bot = {
 		var foodClaimed = {};
 		var foodAntBusy = {};
 		
-		game.viz_setLineColor(0,0,255,1.0);
+		//game.viz_setLineColor(0,0,255,1.0);
 		while(foodSegments.size()>0){
 			var seg = foodSegments.pop();
 			
@@ -311,7 +311,7 @@ var bot = {
 					var oldAntOrder = foodAntBusy[oldAntOrderI];
 					var checkdist = oldAntOrder.dist + game.distance(oldAntOrder.food.row,oldAntOrder.food.col,seg.food.row,seg.food.col)
 					if(checkdist < seg.dist && !foodClaimed[seg.food.row + '-' + seg.food.col]){
-						game.log("turns out sending somebody else to food at " + seg.food.row + "-" + seg.food.col + " is faster because " + checkdist + " is closer than " + seg.dist );	
+						//game.log("turns out sending somebody else to food at " + seg.food.row + "-" + seg.food.col + " is faster because " + checkdist + " is closer than " + seg.dist );	
 						foodClaimed[seg.food.row + '-' + seg.food.col] = oldAntOrder.ant;
 						foodAntBusy[oldAntOrder.ant] = {"ant":oldAntOrder.ant,"food":seg.food,"dist":checkdist};
 
@@ -321,10 +321,10 @@ var bot = {
 				}
 				
 				if(!foodClaimed[seg.food.row + '-' + seg.food.col]){
-					game.viz_line(seg.food,seg.ant);
+					//game.viz_line(seg.food,seg.ant);
 					foodClaimed[seg.food.row + '-' + seg.food.col] = seg.ant;
 					foodAntBusy[seg.ant] = {"ant":seg.ant,"food":seg.food,"dist":seg.dist};
-					game.log("sending ant " + seg.ant + " to " + seg.food.row + '-' + seg.food.col);
+					//game.log("sending ant " + seg.ant + " to " + seg.food.row + '-' + seg.food.col);
 					
 					var curDest = seg.ant.getDestination();
 					if(curDest == null || curDest.row !== seg.food.row || curDest.col !== seg.food.col){
@@ -467,6 +467,7 @@ var bot = {
 		//2) Assume most aggressive move possible for the enemy ant by default
 			
 
+		/*
 		game.viz_setFillColor(255,0,0,1);
 					
 		for(var fI in activeFriendAnts){
@@ -474,149 +475,180 @@ var bot = {
 			game.log("ant " + f + " is an active friend of mine");
 			game.viz_tile(f,0);	
 		}
+		*/
 		
 		var evalCount = 0;
 		var directions =["A","N","S","E","W"];
 		
 		
-		 while(game.timeLeft()>30 & activeFriendAnts.length > 0){
+		 while(game.timeLeft()>40 & activeFriendAnts.length > 0){
 			evalCount++;
 			
 			var randomAnt = Math.floor(Math.random()*(activeFriendAnts.length));
 			// choose an ant to do this for
 			var myAnt = activeFriendAnts[randomAnt];
-			var maxScore = -10000;
+			var maxScore = -1000000;
 			var maxScoreDir = ["A"];
 			var maxScoreDirFinal = "A";
-			game.log("Evaluating myAnt for ant " + myAnt + " at " + myAnt.row + " with count of " + myAnt.distro.count + " at index of " + randomAnt);
+			//game.log("Evaluating myAnt for ant " + myAnt + " at " + myAnt.row + " with count of " + myAnt.distro.count + " at index of " + randomAnt);
 			
 			for(var dI in directions){
+				if(game.timeLeft()<30)
+					break;
+					
 				var d= directions[dI];
 			
-				this.proposeMove(myAnt,d);
-				var score = 0; //Math.random();
-			
-			
-				// GENERATE SCORE
+				if(this.validMove(myAnt,d)){
+					this.proposeMove(myAnt,d);
+					var score = 0; //Math.random();
+				
+				
+					// GENERATE SCORE
+								
+					
+					var friendsInRangeOfEnemy = {"length":0};
+					var enemiesInRangeOfFriend = {"length":0};
+					
+					var totalDistance = 0;
+					
+					for(var eI in activeEnemyAnts){
+						var e = activeEnemyAnts[eI];
+						for(var fI in activeFriendAnts){
+							var f = activeFriendAnts[fI];
+							var nextmove = this.proposedMoves[f];
 							
-				
-				var friendsInRangeOfEnemy = {"length":0};
-				var enemiesInRangeOfFriend = {"length":0};
-				
-				var totalDistance = 0;
-				
-				for(var eI in activeEnemyAnts){
-					var e = activeEnemyAnts[eI];
-					for(var fI in activeFriendAnts){
-						var f = activeFriendAnts[fI];
-						var nextmove = this.proposedMoves[f];
-						
-						var distBetwix = game.distance2(e.row,e.col,nextmove.nexttile.row,nextmove.nexttile.col);
-						totalDistance += distBetwix;	
-						
-						if(distBetwix <= game.config.attackradius2){
-							game.log("found a case where there is going to be an attack between enemy at " + e.row + "-" + e.col + " and friend " + nextmove.nexttile.row + "-" + nextmove.nexttile.col);
-							if(!friendsInRangeOfEnemy[e.row + "-" + e.col]){
-								friendsInRangeOfEnemy[e.row + "-" + e.col] = {"length":0};
+							var distBetwix = game.distance2(e.row,e.col,nextmove.nexttile.row,nextmove.nexttile.col);
+							if(distBetwix < 15){
+								totalDistance += distBetwix;	
+							} else {
+								totalDistance +=15;
 							}
-							if(!friendsInRangeOfEnemy[e.row + "-" + e.col][nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-								friendsInRangeOfEnemy[e.row + "-" + e.col][nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
-								friendsInRangeOfEnemy[e.row + "-" + e.col]["length"] +=1;
-							}
+							if(distBetwix <= game.config.attackradius2){
+							
+								if(evalCount < 10){
+									//game.log("found a case where there is going to be an attack between enemy at " + e.row + "-" + e.col + " and friend " + nextmove.nexttile.row + "-" + nextmove.nexttile.col);
+								}
+								if(!friendsInRangeOfEnemy[e.row + "-" + e.col]){
+									friendsInRangeOfEnemy[e.row + "-" + e.col] = {"length":0};
+								}
+								if(!friendsInRangeOfEnemy[e.row + "-" + e.col][nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
+									friendsInRangeOfEnemy[e.row + "-" + e.col][nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
+									friendsInRangeOfEnemy[e.row + "-" + e.col]["length"] +=1;
+								}
 
-							if(!enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-								enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = {"length":0};
-							}
-							if(!enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][e.row + "-" + e.col]){								
-								enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][e.row + "-" + e.col] = 1;
-								enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]["length"] +=1;
+								if(!enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
+									enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = {"length":0};
+								}
+								if(!enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][e.row + "-" + e.col]){								
+									enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][e.row + "-" + e.col] = e;
+									enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]["length"] +=1;
+								}
 							}
 						}
 					}
-				}
-				
-				var deadFriends = {"length":0};
-				var deadEnemies = {"length":0};
-				
-				for(fI in activeFriendAnts){
-					var f = activeFriendAnts[fI];
-					var nextmove = this.proposedMoves[f];
-					if(enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-						for(var eI in enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-							var e = enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][eI];
-							if(enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col].length > friendsInRangeOfEnemy[e.row + '-' + e.col]){
-								if(!deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-									deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
-									deadFriends.length +=1;
-									game.log("friend at " + nextmove.nexttile.row + "-" + nextmove.nexttile.col + " slated to die");
+					
+					var deadFriends = {"length":0};
+					var deadEnemies = {"length":0};
+					
+					for(fI in activeFriendAnts){
+						var f = activeFriendAnts[fI];
+						var nextmove = this.proposedMoves[f];
+						if(enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
+							for(var eI in enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
+								if(eI !== "length"){
+									var e = enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][eI];
+									
+									if(enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col].length > friendsInRangeOfEnemy[e.row + '-' + e.col].length){
+										if(!deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
+											deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
+											deadFriends.length +=1;
+											if(evalCount < 10){
+												//game.log("friend at " + nextmove.nexttile.row + "-" + nextmove.nexttile.col + " slated to die");
+											}
+										}
+									} else if (enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col].length < friendsInRangeOfEnemy[e.row + '-' + e.col].length){
+										if(!deadEnemies[e.row + '-' + e.col]){
+											deadEnemies[e.row + '-' + e.col] = 1;
+											deadEnemies.length +=1;
+											if(evalCount < 10){
+												//game.log("enemy at " + e.row + '-' + e.col + " slated to die");
+											}
+										}
+									} else {
+										if(evalCount < 10){
+											//game.log("both friend and enemy dies");
+										}
+										if(!deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
+											deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
+											deadFriends.length +=1;
+										}
+										if(!deadEnemies[e.row + '-' + e.col]){
+											deadEnemies[e.row + '-' + e.col] = 1;
+											deadEnemies.length +=1;
+										}
+									}
 								}
-							} else if (enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col].length < friendsInRangeOfEnemy[e.row + '-' + e.col]){
-								if(!deadEnemies[e.row + '-' + e.col]){
-									deadEnemies[e.row + '-' + e.col] = 1;
-									deadEnemies.length +=1;
-									game.log("enemy at " + e.row + '-' + e.col + " slated to die");
-								}
-							} else {
-								game.log("both friend and enemy dies");
-								if(!deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-									deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
-									deadFriends.length +=1;
-								}
-								if(!deadEnemies[e.row + '-' + e.col]){
-									deadEnemies[e.row + '-' + e.col] = 1;
-									deadEnemies.length +=1;
-								}
+								
 							}
-							
+						
 						}
 					
 					}
-				
-				}
-				
-				game.log("the outcome of this move would be " + deadFriends.length + " dead friends and " + deadEnemies.length + " dead enemies");
-				
-				score = deadEnemies.length * 800 + 1000-totalDistance-deadFriends.length*1000;
-				game.log("if we went " + d + " we would have a score of " + score);
-				
-				if(score > maxScore){
-					maxScoreDir = [d];
-					maxScore = score;
-				} else if(score === maxScore){
-					maxScoreDir.push(d);
+					
+					score = deadEnemies.length * 8000 - totalDistance - deadFriends.length*10000;
+					/*
+					if(evalCount < 10){
+						game.log("the outcome of this move by " + myAnt + " in the direction of " + d + "would be " + deadFriends.length + " dead friends and " + deadEnemies.length + " dead enemies ");
+						game.log("the current max score is " + maxScore + " and this will generate a score of " + score);
+						
+					}
+					*/
+					
+					
+					//game.log("if we went " + d + " we would have a score of " + score);
+					if(score == maxScore){
+						maxScoreDir.push(d);
+					} else if(score > maxScore){
+						maxScoreDir = [d];
+						maxScore = score;
+					}
 				}
 			}
 			
-			game.log("best score is " + maxScore + " in teh direction of " + maxScoreDir);
+			//game.log("best score is " + maxScore + " in teh direction of " + maxScoreDir);
 			
 			var r = Math.floor(Math.random()*maxScoreDir.length);
 			
 			var maxScoreDirFinal = maxScoreDir[r];
 			
-			game.log("ended up choosing " + maxScoreDirFinal + " with index of " + r);
+			//game.log("ended up choosing " + maxScoreDirFinal + " with index of " + r);
 
 			
 			// UPDATE DISTRO
 			myAnt.distro.count +=1;
-			myAnt.distro[maxScoreDir] +=1;
+			myAnt.distro[maxScoreDirFinal] +=1;
 			
-			game.log("distro count " + myAnt.distro.count);
+			//game.log("distro count " + myAnt.distro.count);
 			
 			// CHOOSE A RANDOM FROM THE SAMPLE
 			
 			var theCount = Math.floor(Math.random()*(myAnt.distro.count));
-			game.log("randomly chose " + theCount);
+			//game.log("randomly chose " + theCount);
+			var moveDir="W";
 			for(var dI in directions){
 				var d= directions[dI];
 				
 				theCount -= myAnt.distro[d];
-				game.log("count down to " + theCount);
-				if(theCount < 0)
+				//game.log("count down to " + theCount);
+				if(theCount < 0){
+					moveDir = d;
 					break;
+					
+				}
 			}
 			
-			game.log("randomly chose to go " + d);
-			this.proposeMove(myAnt,d);
+			//game.log("randomly chose to go " + d);
+			this.proposeMove(myAnt,moveDir);
 		 
 		 
 		 }
@@ -629,7 +661,7 @@ var bot = {
 			var move = this.proposedMoves[moveI];
 			try{
 		
-				game.log("issuing if i can send ant " + move.ant + " at " + move.ant.row + "-" + move.ant.col + " in the direction of " + move.dir);
+				//game.log("issuing if i can send ant " + move.ant + " at " + move.ant.row + "-" + move.ant.col + " in the direction of " + move.dir);
 			
 				game.issueOrder(move.ant.row,move.ant.col,move.dir);	
 			} catch (e){
@@ -637,7 +669,10 @@ var bot = {
 			}
 		}
 		
-		
+		for(var antI in activeFriendAnts){
+			var ant = activeFriendAnts[antI];
+			game.log("Proposed Move Distro for ant " + ant + " at " + ant.row + "-" + ant.col + " is " + util.inspect(ant.distro) + " but ended up chosing " + this.proposedMoves[ant].dir);
+		}
 		
 		game.finishTurn();
     },
@@ -794,9 +829,9 @@ var bot = {
 	"validMove":function(ant,direction){
 	
 		try{
-			game.log("checking if i can send ant " + ant + " at " + ant.row + "-" + ant.col + " in the direction of " + direction);
+			//game.log("checking if i can send ant " + ant + " at " + ant.row + "-" + ant.col + " in the direction of " + direction);
 			var tileInDir = game.tileInDirection(ant.row,ant.col,direction);
-			return this.proposedMovesMap[tileInDir.row][tileInDir.col] == null && game.map[tileInDir.row][tileInDir.col].type === game.landTypes.LAND;
+			return (this.proposedMovesMap[tileInDir.row][tileInDir.col] == null || this.proposedMovesMap[tileInDir.row][tileInDir.col] == ant) && game.map[tileInDir.row][tileInDir.col].type === game.landTypes.LAND;
 		} catch (e){
 			game.log("ERRRORRRR");
 		}
