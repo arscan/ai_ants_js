@@ -448,7 +448,7 @@ var bot = {
 		var myProposedMap = this.proposedMovesMap;
 		this.buildMap(activeEnemyAnts,
 					dangermap,
-					(Math.floor(Math.sqrt(game.config.attackradius2))+3),
+					(Math.floor(Math.sqrt(game.config.attackradius2))+4),
 					true,
 					function(val){return Math.max(0,val-1);},
 					function(oldval,newval){return newval},
@@ -463,10 +463,33 @@ var bot = {
 			}
 		}
 		
+		/*
 		game.log("calculating whose in range of who.  we have " + activeEnemyAnts.length + " enemy ants and " + activeFriendAnts.length + " friendly ants");
-		//2) Assume most aggressive move possible for the enemy ant by default
+		
+		var friendByEnemy = {};
+		var enemyByFriend = {};
+		
+		for(var fI in game.myAnts){
+			var f = game.myAnts[fI];
 			
-
+			for(var eI in game.enemyAnts){
+				var e = game.enemyAnts[eI];
+				
+				if(game.distance2(e.row,e.col,f.row,f.col)){
+					if(!friendByEnemy[e.row + "-" + e.col]){
+						friendByEnemy = [];
+					}
+					
+					friendByEnemy[e.row + "-" + e.col]
+				
+				}
+				
+			
+			}
+		
+		}
+		*/
+		game.log("running simulations");
 		/*
 		game.viz_setFillColor(255,0,0,1);
 					
@@ -481,7 +504,7 @@ var bot = {
 		var directions =["A","N","S","E","W"];
 		
 		
-		 while(game.timeLeft()>40 & activeFriendAnts.length > 0){
+		 while(game.timeLeft()>50 & activeFriendAnts.length > 0){
 			evalCount++;
 			
 			var randomAnt = Math.floor(Math.random()*(activeFriendAnts.length));
@@ -493,8 +516,6 @@ var bot = {
 			//game.log("Evaluating myAnt for ant " + myAnt + " at " + myAnt.row + " with count of " + myAnt.distro.count + " at index of " + randomAnt);
 			
 			for(var dI in directions){
-				if(game.timeLeft()<30)
-					break;
 					
 				var d= directions[dI];
 			
