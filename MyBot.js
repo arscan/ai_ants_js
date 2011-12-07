@@ -479,7 +479,7 @@ var bot = {
 		var directions =["A","N","S","E","W"];
 		
 		
-		 while(game.timeLeft()>4700 & activeFriendAnts.length > 0){
+		 while(game.timeLeft()>30 & activeFriendAnts.length > 0){
 			evalCount++;
 			
 			var randomAnt = Math.floor(Math.random()*(activeFriendAnts.length));
