@@ -10,6 +10,7 @@ exports.game = {
 	'map': [],
 	'orders': [],
 	'myAntAtTile' : {},
+	'enemyAntAtTile' : {},
 	'myAnts': {},
 	'enemyAnts':[],
 	'food': [],
@@ -18,6 +19,8 @@ exports.game = {
 	'tiles':{},
 	'enemyHills':{},
 	'myHills':{},
+	'allAnts':[],
+	'offsets':{},
 	'landTypes': {
 		'LAND': 0,
 		'DEAD': 1,
@@ -27,7 +30,8 @@ exports.game = {
 		'UNKNOWN': 5
 	},
 	'inputHills':{},
-	'debug': false,
+	'debug': true,
+	'viz_on':false,
 	'turnStart': null,
 	'logFile': null,
 	'start': function(botInput) {
@@ -71,7 +75,7 @@ exports.game = {
 					if (col === 0) {
 						this.map[row] = [];
 					}
-					this.map[row][col] = {'row': row, 'col':col,'type': this.landTypes.UNKNOWN, 'lastseen':5, 'lastreachable':5};
+					this.map[row][col] = {'row': row, 'col':col,'type': this.landTypes.UNKNOWN, 'lastseen':5, 'lastreachable':5, 'reached': false};
 					//this.tiles[row + '-' + col] = {'row': row, 'col':col, 'type': this.landTypes.UNKNOWN, 'lastseen':5};
 				}
 			}
@@ -80,6 +84,7 @@ exports.game = {
 		} else if(line[0] === 'go') {
 		
 		
+			this.enemyAntID = 0;
 			this.calculateVisibility();
 			
 			for(var r = 0; r< this.config.rows;r++){
@@ -124,8 +129,17 @@ exports.game = {
 				}
 			}
 			*/
+			for(var eI in this.myAnts){
+				this.allAnts.push(this.myAnts[eI]);
+			}
+			
+			//try{
 			this.bot.onTurn();
+			//} catch (e) {
+			//	this.log("couldn't do turn!");
+			//}
 			return;
+			
 		} else if(line[0] === 'end') {
 			this.bot.onEnd();
 			return;
@@ -147,10 +161,12 @@ exports.game = {
 					}
 				}
 				this.inputHills = {};
-				this.ants = [];
+				this.allAnts = [];
 				this.food = [];
 				this.dead = [];
 				this.enemyAnts = [];
+				this.enemyAntAtTile = {};
+				this.queuedMoves = {};
 			}
 		} else {
 			if (this.currentTurn === 0 && line[0] !== 'ready') {
@@ -170,25 +186,21 @@ exports.game = {
 					var owner = parseInt(line[3]);
 					obj['owner'] = owner;
 					if (line[0] === 'a') {
-						/*this.map[row][col] = {'col':col, 'row':row,'type': this.landTypes.ANT, 'data': {
-							'owner': owner
-						}};
-						*/
-						/*
-						antMap.tiles[row + '-' + col] = {'type': this.landTypes.ANT,  'col':col, 'row':row, 'data': {
-							'owner': owner
-						}};
-						*/
-						
+						var na = null;			
 						if(owner !== 0 ){
-							this.enemyAnts.push({"row":row,"col":col});
+							na = new Ant(row,col,owner,"e" + this.enemyAnts.length);//{"row":row,"col":col, "owner":owner, "antID": "e", "toString":function(){return "blah"}});
+							this.enemyAnts.push(na);
+							this.allAnts.push(na);
+							this.enemyAntAtTile[row + "-" + col] = na;
 						} else {
 							if(!this.antAtTile(row,col)){
-								this.createAnt(row,col);
-								this.log("created ant at " + row + "-" + col);
+								na = this.createAnt(row,col);
 							}
+							
 						}
-						//this.ants.push(obj);
+						if(na){
+							//this.log("created ant " + na + " at " + row + "-" + col);						
+						}
 					} else if (line[0] === 'd') {
 						
 						if(owner === 0){
@@ -214,17 +226,37 @@ exports.game = {
 			}
 		}
 	},
-	'issueOrder': function(row, col, direction) {
+	'issueOrder': function(row, col, direction, depth) {
 		var next = this.tileInDirection(row,col,direction);
 		
-		if(!this.antAtTile(next.row,next.col) && this.unoccupied(next.row,next.col)){
+		if(direction === "A"){
+			return;
+		}
+		
+		if(!depth)
+			depth = 0;
+		
+		var qm = this.queuedMoves[this.antAtTile(row,col)];
+		
+		
+		if(this.antAtTile(next.row,next.col)){
+			this.log("somebody already at " + next.row + "-" + next.col + " so saving it for later");
+			
+			this.queuedMoves[this.antAtTile(next.row,next.col)] = {"row":row, "col":col, "direction":direction};
+		} else if(this.unoccupied(next.row,next.col)){
 			this.orders.push({
 				'row': parseInt(row),
 				'col': parseInt(col),
 				'direction': direction
 			});
 			this.moveAnt(this.antAtTile(row,col),direction);
+		//}
 		}
+		if(qm && depth < 2){
+			this.issueOrder(qm.row, qm.col, qm.direction, depth+1);
+			this.log("issued order on for " + qm.row + "-" + qm.col + " in dir " + qm.direction);
+		}
+		
 	},
 	'finishTurn': function() {
 		
@@ -277,6 +309,7 @@ exports.game = {
 		return this.map[newrow][newcol];
 	},
 	// PUT IN MAP
+	/*
 	'myHills': function() {
 		var result = [];
 		for (var i = 0, len = this.hills.length; i < len; ++i) {
@@ -286,7 +319,7 @@ exports.game = {
 			}
 		}
 		return result;
-	},
+	},*/
 	// PUT IN MAP
 	'enemyHills': function() {
 		var result = [];
@@ -410,8 +443,56 @@ exports.game = {
 		}
 		return d;
 	},
+	'getOffset':function(dist2){
+		if(!this.offsets[dist2]){
+			this.log("generating new offset of distance2 " + dist2);
+			this.offsets[dist2] = [];
+			var mx = Math.floor(Math.sqrt(dist2));
+			for (var dRow = -mx; dRow < mx+1; ++dRow) {
+				for (var dCol = -mx; dCol < mx+1; ++dCol) {
+					var d = Math.pow(dRow, 2) + Math.pow(dCol, 2);
+					if (d <= dist2) {
+						this.offsets[dist2].push([dRow, dCol]);
+					}
+				}
+			}
+		}
+		
+		return this.offsets[dist2];	
+	},
+	
+	'evalOffset':function(location,dist2,f){
+		var offset = this.getOffset(dist2);
+		for (var visionOffsetI in offset) {
+			var vo = offset[visionOffsetI];
+			var visionRow = location.row + vo[0];
+			var visionCol = location.col + vo[1];
+			
+			if (visionRow < 0) {
+				visionRow = (this.config.rows) + visionRow;
+			} else if (visionRow >= this.config.rows) {
+				visionRow = visionRow - this.config.rows;
+			}
+			
+			if (visionCol < 0) {
+				visionCol = (this.config.cols) + visionCol;
+			} else if (visionCol >= this.config.cols) {
+				visionCol = visionCol - this.config.cols;
+			}
+			f(visionRow,visionCol);
+			
+			//this.map[visionRow][visionCol].lastseen = 0;					
+			
+			//this.vision[visionRow][visionCol] = true;
+			
+		}
+	
+	},
 	
 	'calculateVisibility': function(){
+	
+		//var visionOffsets = this.getOffset(this.config.viewradius2);
+		/*
 		if (this.visionOffsets === false) {
 			this.visionOffsets = [];
 			var mx = Math.floor(Math.sqrt(this.config.viewradius2));
@@ -424,6 +505,7 @@ exports.game = {
 				}
 			}
 		}
+		*/
 		
 		/*
 		for (var trow = 0; trow < this.config.rows; ++trow) {
@@ -438,9 +520,13 @@ exports.game = {
 		
 		for (var antI in this.myAnts) {
 			var ant = this.myAnts[antI];
+			var tmpMap = this.map;
+			
+			this.evalOffset(ant,this.config.viewradius2,function(row,col){tmpMap[row][col].lastseen=0});
+			/*
 			try{
-			for (var visionOffsetI in this.visionOffsets) {
-				var vo = this.visionOffsets[visionOffsetI];
+			for (var visionOffsetI in visionOffsets) {
+				var vo = visionOffsets[visionOffsetI];
 				var visionRow = ant.row + vo[0];
 				var visionCol = ant.col + vo[1];
 				
@@ -458,12 +544,14 @@ exports.game = {
 				}
 				this.map[visionRow][visionCol].lastseen = 0;					
 				
-				//this.vision[visionRow][visionCol] = true;
+				//
 				
 			}
 			} catch (e){
 			 this.log(e);
 			}
+			
+			*/
 		}
 	
 	},
@@ -477,6 +565,7 @@ exports.game = {
 	},
 	
 	// PUT IN MAP
+	/*
 	'visible2': function(row, col) {
 		if (this.vision === false || !this.vision || this.vision.length === 0) {
 			this.vision = [];
@@ -530,16 +619,25 @@ exports.game = {
 		}
 		return this.vision[row][col];
 	},
+	*/
 	
 	'createAnt' : function(row,col){
 		var newAnt = new Ant(row,col);
 		this.myAnts[newAnt] = newAnt;
 		this.myAntAtTile[row + '-' + col] = newAnt;
+		return newAnt;
 	},
 	'killAnt' : function(ant){
-		delete this.myAntAtTile[ant.row + '-' + ant.col];
-		delete this.myAnts[ant];
-		this.log("killing ant at " + ant.row + "-" + ant.col + " with id " + ant + " which is now " + this.myAnts[ant]);
+	
+		if(ant){			
+			if(this.myAntAtTile[ant.row + '-' + ant.col])
+				delete this.myAntAtTile[ant.row + '-' + ant.col];
+			
+			if(this.myAnts[ant])
+				delete this.myAnts[ant];
+			
+			this.log("killing ant at " + ant.row + "-" + ant.col + " with id " + ant + " which is now " + this.myAnts[ant]);
+		}
 	},
 	'antAtTile' : function(row,col){
 		return this.myAntAtTile[row + '-' + col];
@@ -559,34 +657,34 @@ exports.game = {
 	},
 	
 	"viz_setLineWidth": function(width){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v setLineWidth " + width + "\n");
 		}
 	},
 	"viz_setLineColor": function(r, g, b, alpha){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v setLineColor " + r + " " + g + " " + b + " " + alpha + "\n");
 		}
 	},
 	"viz_setFillColor": function(r, g, b, alpha){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v setFillColor " + r + " " + g + " " + b + " " + alpha + "\n");
 		}
 	},
 	"viz_arrow": function(from, to){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v arrow " + from.row + " " + from.col + " " + to.row + " " + to.col + "\n");
 		}
 
 	},
 	"viz_circle": function(tile, radius, fill){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v circle " + tile.row + " " + tile.col + " " + radius + " " + fill + "\n");
 		}
 
 	},
 	"viz_line": function(from, to){
-		if(this.debug){
+		if(this.viz_on){
 
 			fs.writeSync(process.stdout.fd,"v line " + from.row + " " + from.col + " " + to.row + " " + to.col + "\n");
 		}
@@ -594,37 +692,43 @@ exports.game = {
 	},
 
 	"viz_rect": function(tile, width, height, fill){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v rect " + tile.row + " " + tile.col + " " + width + " " + height + " " + fill + "\n");
 		}
 
 	},
 	"viz_star": function(tile, inner_radius, outer_radius, points, fill){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v star " + tile.row + " " + tile.col + " " + inner_radius + " " + outer_radius + " " + points + " " + fill + "\n");
 		}
 	},
 
 	"viz_tile": function(tile){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v tile " + tile.row + " " + tile.col + "\n");
 		}
 
 	},
 
 	"viz_tileBorder": function(tile, subtile){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v tileBorder " + tile.row + " " + tile.col + " " + subtile + "\n");    
 		}	
 	},
 
 	"viz_tileSubTile": function(tile, subtile){
-		if(this.debug){
+		if(this.viz_on){
 			fs.writeSync(process.stdout.fd,"v tileSub" + tile.row + " " + tile.col + " " + subtile + "\n");    	
 		}
 	},
 	
 	"timeLeft": function(){
-		return this.config.turntime - (Date.now() - this.turnStart);
+		return Math.min(this.config.turntime,2000) - (Date.now() - this.turnStart);
 	}
 };
+
+
+// HELPER FUNCTIONS 
+
+
+

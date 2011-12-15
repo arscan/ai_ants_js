@@ -23,13 +23,31 @@ var game = require('./Game').game;
 
 var astar = {
 	
+	init:function(){
+		game.log("looping through this biatch");
+		
+		
+		/*
+		var _search = [];
+		for(var r=0;r<game.config.rows;r++){
+			_search[r] = [];
+			for(var c=0;c<game.config.cols;c++){
+				
+					_search[r][c] = game.map[r][c].type == game.landTypes.WATER;
+				
+				//_search[r][c]=!game.passable(r,c);
+			}
+		}
+		*/
+		this.grid = new AStarGraph(game.map);
 	
+	},
     
     search: function(s, e, allowUnknown, maxdist, heuristic) {
         if(!maxdist){
 			maxdist = 1000;
 		}
-		
+		game.log("running a*");
 		//game.log("maxdist is " + maxdist);
 		heuristic = heuristic || astar.manhattan;
 		if(!allowUnknown){
@@ -38,22 +56,12 @@ var astar = {
 			allowUnknown = true;
 		}
 		
-		var _search = [];
-		for(var r=0;r<game.config.rows;r++){
-			_search[r] = [];
-			for(var c=0;c<game.config.cols;c++){
-				if(allowUnknown){
-					_search[r][c] = game.map[r][c].type == game.landTypes.WATER;
-				} else {
-					_search[r][c] = game.map[r][c].type == game.landTypes.WATER || game.map[r][c].type == game.landTypes.UNKNOWN;
-				}
-				//_search[r][c]=!game.passable(r,c);
-			}
-		}
-		this.grid = new AStarGraph(_search);
+		
+		game.log("initializing stuff");
 		//game.log(this.grid);
-			
-			
+		
+		
+		game.log("initializing stuff2");	
 		for(var x = 0, xl = this.grid.nodes.length; x < xl; x++) {
             for(var y = 0, yl = this.grid.nodes[x].length; y < yl; y++) {
             	var node = this.grid.nodes[x][y];
@@ -100,6 +108,7 @@ var astar = {
 		    // Normal case -- move currentNode from open to closed, process each of its neighbors
 		    currentNode.closed = true;
 
+			//game.log("A Starring: looking for neighbors " + util.inspect(neighbors,10));
 			////game.log("grid: " + util.inspect(grid,10));
 		    var neighbors = astar.neighbors(this.grid, currentNode);
 			//game.log("A Starring: found neighbors " + util.inspect(neighbors,10));
@@ -169,25 +178,25 @@ var astar = {
 		//  if(grid.nodes[x-1]) this.game.log("grid.nodes[x-1][y] " + grid.nodes[x-1][y]);
 	    //if(grid.nodes[x-1] && grid.nodes[x-1][y]) {
 		    ret.push(grid.nodes[((x-1)+grid.nodes.length)%grid.nodes.length][y]);
-			//this.game.log("PUSHED");
+			
 	    //}
 		//this.game.log("grid.nodes[x+1] " + grid.nodes[x+1]);
 		//if(grid.nodes[x+1]) this.game.log("grid.nodes[x+1][y] " + grid.nodes[x+1][y]);
 	    //if(grid.nodes[x+1] && grid.nodes[x+1][y]) {
 		    ret.push(grid.nodes[(x+1)%grid.nodes.length][y]);
-			//this.game.log("PUSHED");
+			
 	    //}
 		//this.game.log("grid.nodes[x] " + grid.nodes[x]);
 		//if(grid.nodes[x])this.game.log("grid.nodes[x][y-1] " + grid.nodes[x][y-1]);
 	    //if(grid.nodes[x] && grid.nodes[x][y-1]) {
 		    ret.push(grid.nodes[x][((y-1)+grid.nodes[x].length)%grid.nodes[x].length]);
-			//this.game.log("PUSHED");
+			
 	    //}
 		//this.game.log("grid.nodes[x] " + grid.nodes[x]);
 		//if(grid.nodes[x]) this.game.log("grid.nodes[x][y+1] " + grid.nodes[x][y+1]);
 	    //if(grid.nodes[x] && grid.nodes[x][y+1]) {
 		    ret.push(grid.nodes[x][(y+1)%grid.nodes[x].length]);
-			//this.game.log("PUSHED");
+			
 	    //}
 	    return ret;
     }

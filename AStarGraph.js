@@ -8,6 +8,8 @@
 */
 
 var BinaryHeap = require('./BinaryHeap').binaryHeap;
+var game = require('./Game').game;
+
 
 /*
 if (!Array.prototype.indexOf) {
@@ -46,6 +48,7 @@ function AStarGraph(grid) {
 		this.nodes[x] = [];
 		for (var y = 0, l = row.length; y < l; ++y) {
 			this.nodes[x].push(new AStarGraphNode(x, y, row[y]));
+			
 		}
 	}
 }
@@ -68,7 +71,14 @@ function AStarGraphNode(x,y,type) {
 	this.x = x;
 	this.y = y;
 	this.pos = {x:x, y:y};
-	this.type = type;
+	this.type = (game.map[x][y].type == game.landTypes.WATER);
+	 this.f = 0;
+    this.g = 0;
+    this.h = 0;
+    this.visited = false;
+     this.closed = false;
+    this.debug = "";
+     this.parent = null;
 }
 AStarGraphNode.prototype.toString = function() {
 	return "[" + this.x + " " + this.y + "]";

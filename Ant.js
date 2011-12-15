@@ -1,11 +1,20 @@
 var antID = 0;
 
-exports.Ant = function(row,col){
+exports.Ant = function(row,col,owner, id){
 	this.row = row;
 	this.col = col;
-	this.antID = antID++;
+	if(!owner){
+		this.antID = antID++;
+	} else {
+		this.antID = id;
+	}
 	this.path = [];
 	this.currentPathIndex = 0;
+	if(!owner){
+		this.owner = 0;
+	} else {
+		this.owner = owner;
+	}
 }
 
 exports.Ant.prototype.toString = function(){
@@ -64,6 +73,11 @@ exports.Ant.prototype.getDestination = function(){
 exports.Ant.prototype.clearPath = function(){
 	this.path = [];
 	this.currentPathIndex =0;
+}
+
+exports.Ant.prototype.debugString = function(){
+	return "{ID:" + this.antID + ", loc: [" + this.row + "," + this.col + "]}";
+
 }
 
 
