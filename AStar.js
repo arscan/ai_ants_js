@@ -1,3 +1,5 @@
+/* BASED OFF THE FOLLOWING: */
+
 /* 	astar.js http://github.com/bgrins/javascript-astar
 	MIT License
 	
@@ -24,21 +26,7 @@ var game = require('./Game').game;
 var astar = {
 	
 	init:function(){
-		game.log("looping through this biatch");
 		
-		
-		/*
-		var _search = [];
-		for(var r=0;r<game.config.rows;r++){
-			_search[r] = [];
-			for(var c=0;c<game.config.cols;c++){
-				
-					_search[r][c] = game.map[r][c].type == game.landTypes.WATER;
-				
-				//_search[r][c]=!game.passable(r,c);
-			}
-		}
-		*/
 		this.grid = new AStarGraph(game.map);
 	
 	},

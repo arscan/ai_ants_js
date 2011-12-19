@@ -1,3 +1,5 @@
+/* BASED OFF THIS: */
+
 /* 	graph.js http://github.com/bgrins/javascript-astar
 	MIT License
 	

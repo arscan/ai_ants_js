@@ -132,8 +132,7 @@ exports.game = {
 			for(var eI in this.myAnts){
 				this.allAnts.push(this.myAnts[eI]);
 			}
-			
-			//try{
+			this.bot.turnInit();
 			this.bot.onTurn();
 			//} catch (e) {
 			//	this.log("couldn't do turn!");

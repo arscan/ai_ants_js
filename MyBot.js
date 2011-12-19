@@ -11,13 +11,9 @@ var bot = {
     'onReady': function() {
 		game.finishTurn();
     },
-    'onTurn': function() {
-	
-		// initialize the astar search
-		
+	'turnInit':function(){
 		this.antOrders = {};
 		
-		//this.init();
 		game.log("cleaning out ant distributions");
 		for(var antI in game.allAnts){
 			var ant = game.allAnts[antI];
@@ -26,7 +22,6 @@ var bot = {
 		
 		this.aStarRun = false;
 	
-		
 		game.log("Initializing Map of Proposed Moves");
 		
 		for(var r=0;r<game.config.rows;r++){
@@ -41,25 +36,60 @@ var bot = {
 		this.proposedMoves = {};
 		for(var antI in game.allAnts){
 			var ant = game.allAnts[antI];
-			//this.proposedMovesMap[ant.row][ant.col]=ant;
 			this.proposeMove(ant,"A");
 		}
-		
-		
-		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-		
-		
-		var directions = this.generateRandomDirections();
-		game.log("Building hillmap that defines areas near my hills");
-		
-		
+	},
+	
+	
+    'onTurn': function() {
+
+		// create a RxC matrix that contains distance from nearest one of my hills
+		// only do every 3rd turn to conserve cycles
+		// data stored in this.myHillMap
 		if(!this.myHillMap || game.currentTurn%3 == 0){
+			this.refreshHillMap();
+		}
+		
+		// create a RxC matrix that contains distance to my nearest ant
+		// used in a couple of ways
+		// stored in this.reachableMap
+		if(!this.reachableMap || !this.unreachableTiles || game.currentTurn%2 == 0){
+			this.refreshReachableMap();
+		}
+		
+		// create an array of tiles that represent the border of what is undiscovered for me
+		if(!this.undiscoveredTiles || game.currentTurn%3 == 1){
+			this.refreshUndiscoveredTiles();
+		}
+		
+		// generate a RxC matrix that contains weightings for each tile based on my hill, which tiles aren't reachable, and which tiles aren't discovered
+		// uses BFS to propogate the weightings out		
+		// stored in this.exploreMap;
+		this.refreshExploreMap();
+		
+		
+		// propose moves based on nearby food
+		// food gathering is done using a* searches, which is different than most other bots
+		this.proposeFoodMoves();
+		
+		// propose moves based on the exploration map
+		this.proposeExploreMoves();
+
+		
+		// propose moves based on combat
+		this.proposeBattleMoves();
+		
+		// execute all proposed moves
+		this.executeMoves();
+
+		game.finishTurn();
+    },
+    'onEnd': function() {
+    
+    },
+	
+	'refreshHillMap': function(){
+			game.log("Building hillmap that defines areas near my hills");
 			this.myHillMap = [];
 			this.buildMap(game.myHills,
 						this.myHillMap,
@@ -80,159 +110,120 @@ var bot = {
 							}
 							return retval;
 							});
-		}
 		
-		var myHillMap = this.myHillMap;
-		
-		if(!this.reachableMap || !this.unreachableTiles || game.currentTurn%2 == 0){
-			game.log("Building reachableMap that contains of tiles that are reachable within 10 turns");
-			this.reachableMap = [];
-			this.buildMap(game.myAnts,
-						this.reachableMap,
-						16,
-						true,
-						function(val){return Math.max(0,val-1);},
-						function(oldval,newval){return newval},
-						function(row,col){
-							
-							var retval = false;
-							try{
-								retval = game.map[row][col].type !== game.landTypes.WATER && game.map[row][col].type !== game.landTypes.UNKNOWN;
-							} catch (e){
-								game.log("error when looking up " + row + "-" + col);
-							}
-							return retval;
-							},
-						null,
-						function(row,col,val){
-							if(val > 5){
-								game.map[row][col].reached = true;
-							}
-						});
-							
-			
-			
-			
-			if(game.timeLeft() < 100){
-				this.executeMoves();
-				game.log("Bailing because we only have " + game.timeLeft() + " time left");
-				game.finishTurn();
-				return;
-			};
-			game.log("updating map to contain how recently something has been reachable");
-			
-			
-			
-			for(var c=0;c<game.config.cols;c++){
-				for(var r=0;r<game.config.rows;r++){
-					
-					game.map[r][c].lastreachable = Math.min(5,game.map[r][c].lastreachable);
-					
-					if(this.reachableMap[r][c]>6){
-						game.map[r][c].lastreachable = 0;
-					}
-					//game.viz_setFillColor(game.map[r][c].lastreachable*10,game.map[r][c].lastreachable*10,game.map[r][c].lastreachable*10,.5);
-					//game.viz_tile({"row":r,"col":c},0);
-				}
-			}
-				
-		
-			if(game.timeLeft() < 100){
-				this.executeMoves();
-				game.log("Bailing because we only have " + game.timeLeft() + " time left");
-				game.finishTurn();
-				return;
-			};
+	},
+	
+	'refreshReachableMap':function(){
+		var myHillMap = this.myHillMap, 
+			cols = game.config.cols,
+			rows = game.config.rows,
+			bordering = false;
 
-			game.log("Building border of not reachable tiles");
-			
-			this.unreachableTiles = [];
-			var cols = game.config.cols;
-			var rows = game.config.rows;
-			var bordering = false;
-			for(var c=0;c<game.config.cols;c++){
-				for(var r=0;r<game.config.rows;r++){
-					//if(!game.visible(r,c))
-					//	game.viz_tile({"row":r,"col":c},0);
-					
-					bordering = false;
-					
-					if(game.map[r][c].lastreachable > 2 && game.map[r][c].type !== game.landTypes.WATER){
-					
-						if(game.map[(r+1)%rows][c].lastreachable <3){
-							bordering = true;
-						} else if(game.map[(r-1+rows)%rows][c].lastreachable<3){
-							bordering = true;
-						} else if(game.map[r][(c+1)%cols].lastreachable<3){
-							bordering = true;
-						} else if(game.map[r][(c-1+cols)%cols].lastreachable<3){
-							bordering = true;
-						}	
-						/*
-						for (var dirI = 0; dirI<4;dirI++){
-							var dir = directions[dirI];
-							if(game.tileInDirection(r,c,dir).lastreachable < 3){
-								bordering = true;
-							}
+		game.log("Building reachableMap that contains of tiles that are reachable within 10 turns");
+		this.reachableMap = [];
+	
+		this.buildMap(game.myAnts,
+					this.reachableMap,
+					16,
+					true,
+					function(val){return Math.max(0,val-1);},
+					function(oldval,newval){return newval},
+					function(row,col){
+						
+						var retval = false;
+						try{
+							retval = game.map[row][col].type !== game.landTypes.WATER && game.map[row][col].type !== game.landTypes.UNKNOWN;
+						} catch (e){
+							game.log("error when looking up " + row + "-" + col);
 						}
-						*/
-					}
-					if(bordering && myHillMap[r][c]===0){
-						if(Math.random() < .5)
-							this.unreachableTiles.push({"row":r,"col":c});
-						//game.viz_setFillColor(55,55,55,.7);
-						//game.viz_tile({"row":r,"col":c},0);
-					} else if(bordering && myHillMap[r][c]>0){
-						//game.viz_setFillColor(55,55,55,.7);
-						//game.viz_tile({"row":r,"col":c},0);
-						game.food.push({"row":r,"col":c});
-					}
+						return retval;
+						},
+					null,
+					function(row,col,val){
+						if(val > 5){
+							game.map[row][col].reached = true;
+						}
+					});
+						
+		game.log("updating map to contain how recently something has been reachable");
+		
+		for(var c=0;c<game.config.cols;c++){
+			for(var r=0;r<game.config.rows;r++){
+				
+				game.map[r][c].lastreachable = Math.min(5,game.map[r][c].lastreachable);
+				
+				if(this.reachableMap[r][c]>6){
+					game.map[r][c].lastreachable = 0;
 				}
 			}
 		}
-		if(!this.undiscoveredTiles || game.currentTurn%3 == 1){
-			game.log("Building border of discovered tiles");
-			this.undiscoveredTiles = [];
-			var rows = game.config.rows;
-			var cols = game.config.cols;
-			for(var c=0;c<cols;c++){
-				for(var r=0;r<rows;r++){
-					//if(!game.visible(r,c))
-					//	game.viz_tile({"row":r,"col":c},0);
-					
-					bordering = false;
-					
-					if(game.map[r][c].reached){
-					
-					
-						if(!game.map[(r+1)%rows][c].reached && game.map[(r+1)%rows][c].type !== game.landTypes.WATER){
-							bordering = true;
-						} else if(!game.map[(r-1+rows)%rows][c].reached && game.map[(r-1+rows)%rows][c].type !== game.landTypes.WATER){
-							bordering = true;
-						} else if(!game.map[r][(c+1)%cols].reached && game.map[r][(c+1)%cols].type !== game.landTypes.WATER){
-							bordering = true;
-						} else if(!game.map[r][(c-1+cols)%cols].reached && game.map[r][(c-1+cols)%cols].type !== game.landTypes.WATER){
-							bordering = true;
-						}	
-					}
-					if(bordering){
-						this.undiscoveredTiles.push({"row":r,"col":c});
-						//game.viz_setFillColor(55,55,55,.7);
-						//game.viz_tile({"row":r,"col":c},0);
-					}
-				}
-			}
-		}
+			
+		game.log("Building border of not reachable tiles");
 		
+		this.unreachableTiles = [];
 		
-		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
+		for(var c=0;c<game.config.cols;c++){
+			for(var r=0;r<game.config.rows;r++){
+				
+				bordering = false;
+				
+				if(game.map[r][c].lastreachable > 2 && game.map[r][c].type !== game.landTypes.WATER){
+				
+					if(game.map[(r+1)%rows][c].lastreachable <3){
+						bordering = true;
+					} else if(game.map[(r-1+rows)%rows][c].lastreachable<3){
+						bordering = true;
+					} else if(game.map[r][(c+1)%cols].lastreachable<3){
+						bordering = true;
+					} else if(game.map[r][(c-1+cols)%cols].lastreachable<3){
+						bordering = true;
+					}	
 
+				}
+				if(bordering && myHillMap[r][c]===0){
+					if(Math.random() < .5)
+						this.unreachableTiles.push({"row":r,"col":c});
+				} else if(bordering && myHillMap[r][c]>0){
+					game.food.push({"row":r,"col":c});
+				}
+			}
+		}
+	
+	},
+	
+	'refreshUndiscoveredTiles': function(){
+		game.log("Building border of discovered tiles");
+		this.undiscoveredTiles = [];
+		var rows = game.config.rows;
+		var cols = game.config.cols;
+		for(var c=0;c<cols;c++){
+			for(var r=0;r<rows;r++){
+				
+				bordering = false;
+				
+				if(game.map[r][c].reached){
+				
+				
+					if(!game.map[(r+1)%rows][c].reached && game.map[(r+1)%rows][c].type !== game.landTypes.WATER){
+						bordering = true;
+					} else if(!game.map[(r-1+rows)%rows][c].reached && game.map[(r-1+rows)%rows][c].type !== game.landTypes.WATER){
+						bordering = true;
+					} else if(!game.map[r][(c+1)%cols].reached && game.map[r][(c+1)%cols].type !== game.landTypes.WATER){
+						bordering = true;
+					} else if(!game.map[r][(c-1+cols)%cols].reached && game.map[r][(c-1+cols)%cols].type !== game.landTypes.WATER){
+						bordering = true;
+					}	
+				}
+				if(bordering){
+					this.undiscoveredTiles.push({"row":r,"col":c});
+				}
+			}
+		}
+	},
+	
+	'refreshExploreMap':function(){
+		var myHillMap = this.myHillMap;
+	
 		if(!this.exploreMap){
 			this.exploreMap = [];
 		}
@@ -281,112 +272,23 @@ var bot = {
 						
 					});
 		
-		
-		/*
-		game.log("Building map & diffusing invisible tiles to explore map");
-		this.buildMap(this.unreachableTiles,
-					this.exploreMap,
-					5,
-					true,
-					function(val, row, col){return .9*val;},
-					function(oldval,newval){return (oldval*.1+newval*.9)},
-					function(row,col){
-						var retval = false;
-						try{
-							retval = game.map[row][col].type !== game.landTypes.WATER && game.map[row][col].type !== game.landTypes.UNKNOWN;
-						} catch (e){
-							game.log("error when looking up " + row + "-" + col);
-						}
-						return retval;
-						},
-					function(row,col){
-						if(myHillMap[row][col] == 2){
-							return .1;
-							//return null;
-						} else {
-							return null;
-						}
-					
-						
-					});
-		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
-		game.log("Diffusing enemy ant hills tiles on explore map");
-		
-		this.buildMap(game.enemyHills,
-					this.exploreMap,
-					30,
-					true,
-					function(val, row, col){return .9*val;},
-					function(oldval,newval){return (oldval+newval)},
-					function(row,col){
-						var retval = false;
-						try{
-							retval = game.map[row][col].type !== game.landTypes.WATER && game.map[row][col].type !== game.landTypes.UNKNOWN;
-						} catch (e){
-							game.log("error when looking up " + row + "-" + col);
-						}
-						return retval;
-						},
-					function(row,col){
-						if(myHillMap[row][col] == 2){
-							return .1;
-							//return null;
-						} else {
-							return null;
-						}
-					});
-		
-		*/
-		
-		
-		//PRINTMAP
-		/*
-		for(var c=0;c<game.config.cols;c++){
-			for(var r=0;r<game.config.rows;r++){
-				if(this.exploreMap[r][c] > 0){
-				game.viz_setFillColor(55,0,0,this.exploreMap[r][c]/10.0);
-				game.viz_tile({"row":r,"col":c},0);
-				}
-			}
-		}			
-		*/
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
+	
+	},
+	
+	'proposeFoodMoves': function(){
 		game.log("figuring out which food can be reached within 10 turns by looking on the reacahble map");
 		var reachableFood = [];
 		
 		for(var i = 0; i<game.food.length; i++){
 			var f = game.food[i];
-			//game.log("checking food at " +f.row + "-" + f.col + " which has a reachable val of " + reachableMap[f.row][f.col]);
 			if(this.reachableMap[f.row][f.col] > 0){
 			
 				reachableFood.push(f);
-				//game.viz_setFillColor(255,0,0,.9);
-				//game.viz_tile({"row":f.row,"col":f.col},0);
 			
 			}
 		}
 		
 		game.log("Found " + reachableFood.length + " food tiles that I can easily reach");
-		
-		if(game.timeLeft() < 100){
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
 		
 		if(!this.reachableFoodAntMap || !this.reachableFoodAnts || game.currentTurn%2 == 1){
 			game.log("building a map of reachable food so I can figuring out what ants are in the running");
@@ -415,24 +317,12 @@ var bot = {
 			for (var antI in game.myAnts) {
 				var ant = game.myAnts[antI];
 				if(this.reachableFoodAntMap[ant.row][ant.col] > 0){
-					this.reachableFoodAnts.push(ant);
-					//game.viz_setFillColor(0,255,0,.9);
-					//game.viz_tile({"row":ant.row,"col":ant.col},0);
-				
+					this.reachableFoodAnts.push(ant);				
 				}
 			}
-			
-		
-
 			game.log("Found " + this.reachableFoodAnts.length + " ants elilble for food gathering duty");
 		}
 		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
 		var foodSegments = new BinaryHeap(function(node){return node.dist});
 
 		
@@ -442,29 +332,17 @@ var bot = {
 			for (var foodI in reachableFood) {
 				var food = reachableFood[foodI];
 				var dist = game.distance(ant.row,ant.col,food.row,food.col);
-				//game.log("pushing dist " + dist + " " + ant.row + "-" + ant.col + " for food " + food.row + "-" + food.col);
 				foodSegments.push({"ant":ant,"food":food,"dist":dist});
 			}
 		}
-		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
 
 		game.log("found " + foodSegments.size() + " food-ant segments");
-		//game.log("shortest food segment is of distance " +foodSegments.pop().dist);
 		
 		var foodClaimed = {};
 		var foodAntBusy = {};
 		
-		//game.viz_setLineColor(0,0,255,1.0);
 		while(foodSegments.size()>0){
 			var seg = foodSegments.pop();
-			
-			//game.log("checking food segment with food at " + seg.food.row + '-' + seg.food.col);
 			
 			if(!foodClaimed[seg.food.row + '-' + seg.food.col] && !foodAntBusy[seg.ant] && game.myAntAtTile[seg.ant.row + "-" + seg.ant.col]){
 				
@@ -476,17 +354,13 @@ var bot = {
 						//game.log("turns out sending somebody else to food at " + seg.food.row + "-" + seg.food.col + " is faster because " + checkdist + " is closer than " + seg.dist );	
 						foodClaimed[seg.food.row + '-' + seg.food.col] = oldAntOrder.ant;
 						foodAntBusy[oldAntOrder.ant] = {"ant":oldAntOrder.ant,"food":seg.food,"dist":checkdist};
-
-						//game.viz_setLineColor(0,0,255,1.0);						
-						//game.viz_line(seg.food,oldAntOrder.food);				
+		
 					}
 				}
 				
 				if(!foodClaimed[seg.food.row + '-' + seg.food.col]){
-					//game.viz_line(seg.food,seg.ant);
 					foodClaimed[seg.food.row + '-' + seg.food.col] = seg.ant;
 					foodAntBusy[seg.ant] = {"ant":seg.ant,"food":seg.food,"dist":seg.dist};
-					//game.log("sending ant " + seg.ant + " to " + seg.food.row + '-' + seg.food.col);
 					
 					var curDest = seg.ant.getDestination();
 					if(curDest == null || curDest.row !== seg.food.row || curDest.col !== seg.food.col){
@@ -498,8 +372,6 @@ var bot = {
 						var path = astar.search(seg.ant,seg.food, true);	
 						game.log("done setting path for this segment");
 						seg.ant.setPath(path);
-						//game.viz_setLineColor(255,0,255,1.0);
-						//game.viz_line(seg.food,seg.ant);		
 					}
 					
 					this.antOrders[seg.ant] = seg.ant;
@@ -508,21 +380,12 @@ var bot = {
 			}
 		
 		}
-		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
 
 		for(var antI in this.antOrders){
 			var ant = this.antOrders[antI];
 			var nextMove =ant.getNextMove();
 			if(this.validMove(ant,nextMove)){
-				//game.log("issuing order for ant " + ant + " at " + ant.row + "-" + ant.col + " to go " + nextMove);
 				this.proposeMove(ant,nextMove);
-				//game.viz_tile(this.proposedMoves[ant].nexttile,0);
 			} else {
 				delete this.antOrders[antI];
 				ant.clearPath();
@@ -530,23 +393,15 @@ var bot = {
 			}
 			
 		}
+	
+	},
+	
+	'proposeExploreMoves':function(){
 		
-						
-		//this.buildMap(game.food,exploreMap,5,true,function(val){return Math.max(0,val-1);},function(oldval,newval){return oldval+newval},function(row,col){return(game.map[row][col].type !== game.landTypes.WATER && game.map[row][col].type !== game.landTypes.UNKNOWN)});
-		
-		
-		
-		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
 		game.log("Proposing moves based on hill climbing");
-		
-		var bestDir = [directions[0]];
+		var directions = this.generateRandomDirections(),
+			bestDir = [directions[0]];
+			
 		for (var i in game.myAnts) {
 			var ant = game.myAnts[i];
 			if(!this.antOrders[ant]){
@@ -555,7 +410,6 @@ var bot = {
 				for (dirI in directions) {
 					var dir = directions[dirI];
 					var t = game.tileInDirection(ant.row,ant.col,dir);
-					//game.log(" what i'm looking for" + util.inspect(t));
 					try{
 					if(maxScent < this.exploreMap[t.row][t.col] && this.validMove(ant,dir)){
 						maxScent = this.exploreMap[t.row][t.col];
@@ -570,54 +424,26 @@ var bot = {
 				ant.clearPath();
 				
 				this.proposeMove(ant, bestDir[Math.floor(Math.random()*(bestDir.length))]);
-				
-				//game.viz_tile(this.proposedMoves[ant].nexttile,0);
-	
-				
-				//game.issueOrder(ant.row, ant.col, finalDir);
 			}
-			
 		}
 	
-		
-		
-		
-		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
+	},
+	
+	'proposeBattleMoves': function(){
+	
 		game.log("Calculating ants that may be in battle");
 		
-		var potentialBattleAnts = this.calculatePotentialBattleAnts();
-		var potentialBattleAntsSize = 0;
+		var potentialBattleAnts = this.calculatePotentialBattleAnts(),
+			directions = this.generateRandomDirections(),
+			potentialBattleAntsSize = 0;
+		
+		
 		for(var pA in potentialBattleAnts){
 			potentialBattleAntsSize++;
 		}
 		
-		
-		if(game.timeLeft() < 100){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
 		game.log("Adding proposed moves for enemy ants");
 		
-		/*
-		for(var pA in potentialBattleAnts){
-			var p = potentialBattleAnts[pA];
-			if(p.ant.owner > 0){
-				this.proposeMove(p.ant,"A");
-			}
-			
-		}
-		*/
-		// moving some enemy ants for the heck of it
 		for(var eI in game.enemyAnts){
 			var e = game.enemyAnts[eI];
 			
@@ -639,21 +465,10 @@ var bot = {
 				}
 				
 				var t = game.tileInDirection(e.row,e.col,finalDir);
-				//e.row = t.row;
-				//e.col = t.col;
-				
-				
 				this.proposeMove(e,finalDir);
 				game.viz_tile(this.proposedMoves[e].nexttile,0);
 			}
 		}
-		
-		if(game.timeLeft() < 50){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
 		
 		game.log("Calculating initial battles");
 				
@@ -668,14 +483,6 @@ var bot = {
 			}
 		}
 		
-		
-		if(game.timeLeft() < 50){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
 		game.log("building enemy and hill heat");
 		// calculating enemy heat stuffs
 		var dangermap = [];
@@ -711,52 +518,14 @@ var bot = {
 						return retval;
 						});
 		
-		/*
-		for(var cI in this.conflicts){
-			var c = this.conflicts[cI];
-			
-			if(c.length){
-			
-				var p = potentialBattleAnts[cI];
-				game.log("checking conflict " + p.ant);
-				var result = this.calculateLocalBattleOutcome(p.ant);
-				game.log("conflict for ant " + p.ant.debugString() + "results in " + result.friends + " friend deaths and " + result.enemies + " enemy deaths");
-			}
-			
-		}
 		
-		for(var pA in potentialBattleAnts){
-			var p = potentialBattleAnts[pA];
-			
-				if(this.conflicts[p.ant] && this.conflicts[p.ant].length > 0){
-					var oldConflict = this.conflicts[p.ant][0];
-					game.log("attempting to remove " + p.ant + " from conflict");
-					game.log("checking 1 conflict this guy had... that guy had this many conflicts: " + this.conflicts[oldConflict].length);
-					this.removeAntFromConflicts(p.ant);		
-					
-					game.log("do we still have an old conflict? " + this.conflicts[p.ant]);
-					game.log("how many does that old guy have?" + this.conflicts[oldConflict].length);
-					
-				}
-		}
-		*/
-		
-		if(game.timeLeft() < 50){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
 		var convergedBattleAnts = {};
 		
 		var evalCount = 0;
 		var directions =["A","N","S","E","W"];
 		
 		var continueRunning = true;
-		
-		var directions = ["A","N","S","E","W"];
-				
+						
 		while(/*evalCount < 100 &&  */game.timeLeft()>75 && continueRunning){
 			
 			var rk = randomKey(potentialBattleAnts);
@@ -782,20 +551,6 @@ var bot = {
 					maxScore = currentBattleOutcome.enemies * 10000 - currentBattleOutcome.friends*8000 + this.reachableMap[this.proposedMoves[ant].nexttile.row][this.proposedMoves[ant].nexttile.col];
 				else 
 					maxScore =  currentBattleOutcome.enemies * 8000 - currentBattleOutcome.friends*10000 + dangermap[this.proposedMoves[ant].nexttile.row][this.proposedMoves[ant].nexttile.col];
-				
-				/*
-				if(currentBattleOutcome.enemies > currentBattleOutcome.friends){
-					for(var aI in currentBattleOutcome.affected){
-						var a = currentBattleOutcome.affected[aI];
-						if(a.owner === ant.owner && a != ant){
-							var pa = this.proposedMoves[a];
-							//game.log("this guy (" + a + ") helped me (" + ant + ") out.  giving him props by adding stuff to his distro " + pa.dir);
-							a.distro[pa.dir] += 1;		
-							a.distro.count+=1;	
-						}
-					}
-				}
-				*/
 				
 				var maxScoreDir = [currentDirection];
 				
@@ -846,10 +601,7 @@ var bot = {
 					ant.distro.count +=1;
 					ant.distro[d] +=1;
 				}
-				
-				//game.log("best direction was " + util.inspect(maxScoreDir) + " with score " + maxScore + " new distro " + util.inspect(ant.distro));
-				//game.log("distro count " + ant.distro.count);
-			
+
 				// CHOOSE A RANDOM FROM THE SAMPLE
 				
 				var theCount = Math.floor(Math.random()*(ant.distro.count));
@@ -867,7 +619,6 @@ var bot = {
 					}
 				}
 				
-				//game.log("randomly chose to go " + moveDir);
 				this.removeAntFromConflicts(ant);
 				this.proposeMove(ant,moveDir);
 				this.addAntToConflict(potentialBattleAnts[ant]);
@@ -877,13 +628,6 @@ var bot = {
 			
 		 }
 		 
-		if(game.timeLeft() < 20){
-			this.executeMoves();
-			game.log("Bailing because we only have " + game.timeLeft() + " time left");
-			game.finishTurn();
-			return;
-		};
-
 		 game.log("was able to burn through " + evalCount + " evals for " + potentialBattleAntsSize + " ants at a rate of " + (evalCount/potentialBattleAntsSize) + " evals per ant");
 	 	
 		
@@ -931,292 +675,25 @@ var bot = {
 				}
 			}
 			if(this.validMove(ant,realMoveDir)){
-			
-				//game.log("decided to move ant to " + realMoveDir + " in the end with a score of " + realMoveScore);
 				this.removeAntFromConflicts(ant);
 				this.proposeMove(ant,realMoveDir);
 				this.addAntToConflict(potentialBattleAnts[ant]);	
 			}
 		}
-		game.viz_setFillColor(255,255,0,.5);
 		for(var pA in potentialBattleAnts){
 			var ant = potentialBattleAnts[pA].ant;
 			game.viz_tile(this.proposedMoves[ant].nexttile,0);
 			game.log("Proposed Move Distro for ant " + ant + " at " + ant.row + "-" + ant.col + " is " + util.inspect(ant.distro) + " but ended up chosing " + this.proposedMoves[ant].dir);
 		}
-		// for(var antI in activeFriendAnts){
-		//	var ant = activeFriendAnts[antI];
-		//	game.log("Proposed Move Distro for ant " + ant + " at " + ant.row + "-" + ant.col + " is " + util.inspect(ant.distro) + " but ended up chosing " + this.proposedMoves[ant].dir);
-		//}
-		
-		
-		/*
-		
-		
-		
-		// BATTLE RESOLUTION UPDATE
-		
-		//1) Figure out what enemy ants there are that are within my range
-		//game.viz_setFillColor(55,255,255,.9);
-		
-		game.log("finding enemy ants and moving them towards my guys");
-		
-		var activeEnemyAnts = [];
-		for(var eI in game.enemyAnts){
-			var e = game.enemyAnts[eI];
-			
-			if(reachableMap[e.row][e.col] > 8){
-				
-				
-				var maxScent = 0;
-				var finalDir = directions[0];
-				for (dirI in directions) {
-					var dir = directions[dirI];
-					var t = game.tileInDirection(e.row,e.col,dir);
-					//game.log(" what i'm looking for" + util.inspect(t));
-					
-					if(maxScent < reachableMap[t.row][t.col]){
-						maxScent = reachableMap[t.row][t.col];
-						finalDir = dir;
-					}
-					
-				}
-				
-				var t = game.tileInDirection(e.row,e.col,finalDir);
-				e.row = t.row;
-				e.col = t.col;
-				
-				game.viz_tile(e,0);
-				
-				activeEnemyAnts.push(e);
-			}
-		}
-		
-		game.log("figuring otu which of my friends are in the path of this mofo " + (Math.floor(Math.sqrt(game.config.attackradius2))+2));
-		
-		
-		var activeFriendAnts = [];
-		var dangermap = [];
-		var myProposedMap = this.proposedMovesMap;
-		this.buildMap(activeEnemyAnts,
-					dangermap,
-					(Math.floor(Math.sqrt(game.config.attackradius2))+4),
-					true,
-					function(val){return Math.max(0,val-1);},
-					function(oldval,newval){return newval},
-					function(row,col){return true});
-					
-		for(moveI in this.proposedMoves){
-			var move = this.proposedMoves[moveI];
-			if(dangermap[move.nexttile.row][move.nexttile.col] > 0){
-				game.log("adding " + move.ant + " who is right now at " + move.ant.row + "-" + move.ant.col + " but plans to go to " + move.dir);
-				activeFriendAnts.push(move.ant);
-				move.ant.clearPath();
-			}
-		}
-		
 	
-		game.log("running simulations");
-		
-		
-		var evalCount = 0;
-		var directions =["A","N","S","E","W"];
-		
-		
-		 while(game.timeLeft()>50 & activeFriendAnts.length > 0){
-			evalCount++;
-			
-			var randomAnt = Math.floor(Math.random()*(activeFriendAnts.length));
-			// choose an ant to do this for
-			var myAnt = activeFriendAnts[randomAnt];
-			var maxScore = -1000000;
-			var maxScoreDir = ["A"];
-			var maxScoreDirFinal = "A";
-			//game.log("Evaluating myAnt for ant " + myAnt + " at " + myAnt.row + " with count of " + myAnt.distro.count + " at index of " + randomAnt);
-			
-			for(var dI in directions){
-					
-				var d= directions[dI];
-			
-				if(this.validMove(myAnt,d)){
-					this.proposeMove(myAnt,d);
-					var score = 0; //Math.random();
-				
-				
-					// GENERATE SCORE
-								
-					
-					var friendsInRangeOfEnemy = {"length":0};
-					var enemiesInRangeOfFriend = {"length":0};
-					
-					var totalDistance = 0;
-					
-					for(var eI in activeEnemyAnts){
-						var e = activeEnemyAnts[eI];
-						for(var fI in activeFriendAnts){
-							var f = activeFriendAnts[fI];
-							var nextmove = this.proposedMoves[f];
-							
-							var distBetwix = game.distance2(e.row,e.col,nextmove.nexttile.row,nextmove.nexttile.col);
-							if(distBetwix < 15){
-								totalDistance += distBetwix;	
-							} else {
-								totalDistance +=15;
-							}
-							if(distBetwix <= game.config.attackradius2){
-							
-								if(evalCount < 10){
-									//game.log("found a case where there is going to be an attack between enemy at " + e.row + "-" + e.col + " and friend " + nextmove.nexttile.row + "-" + nextmove.nexttile.col);
-								}
-								if(!friendsInRangeOfEnemy[e.row + "-" + e.col]){
-									friendsInRangeOfEnemy[e.row + "-" + e.col] = {"length":0};
-								}
-								if(!friendsInRangeOfEnemy[e.row + "-" + e.col][nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-									friendsInRangeOfEnemy[e.row + "-" + e.col][nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
-									friendsInRangeOfEnemy[e.row + "-" + e.col]["length"] +=1;
-								}
-
-								if(!enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-									enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = {"length":0};
-								}
-								if(!enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][e.row + "-" + e.col]){								
-									enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][e.row + "-" + e.col] = e;
-									enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]["length"] +=1;
-								}
-							}
-						}
-					}
-					
-					var deadFriends = {"length":0};
-					var deadEnemies = {"length":0};
-					
-					for(fI in activeFriendAnts){
-						var f = activeFriendAnts[fI];
-						var nextmove = this.proposedMoves[f];
-						if(enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-							for(var eI in enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-								if(eI !== "length"){
-									var e = enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col][eI];
-									
-									if(enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col].length > friendsInRangeOfEnemy[e.row + '-' + e.col].length){
-										if(!deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-											deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
-											deadFriends.length +=1;
-											if(evalCount < 10){
-												//game.log("friend at " + nextmove.nexttile.row + "-" + nextmove.nexttile.col + " slated to die");
-											}
-										}
-									} else if (enemiesInRangeOfFriend[nextmove.nexttile.row + "-" + nextmove.nexttile.col].length < friendsInRangeOfEnemy[e.row + '-' + e.col].length){
-										if(!deadEnemies[e.row + '-' + e.col]){
-											deadEnemies[e.row + '-' + e.col] = 1;
-											deadEnemies.length +=1;
-											if(evalCount < 10){
-												//game.log("enemy at " + e.row + '-' + e.col + " slated to die");
-											}
-										}
-									} else {
-										if(evalCount < 10){
-											//game.log("both friend and enemy dies");
-										}
-										if(!deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col]){
-											deadFriends[nextmove.nexttile.row + "-" + nextmove.nexttile.col] = 1;
-											deadFriends.length +=1;
-										}
-										if(!deadEnemies[e.row + '-' + e.col]){
-											deadEnemies[e.row + '-' + e.col] = 1;
-											deadEnemies.length +=1;
-										}
-									}
-								}
-								
-							}
-						
-						}
-					
-					}
-					
-					score = deadEnemies.length * 8000 - totalDistance - deadFriends.length*10000;
-					
-					//if(evalCount < 10){
-					//	game.log("the outcome of this move by " + myAnt + " in the direction of " + d + "would be " + deadFriends.length + " dead friends and " + deadEnemies.length + " dead enemies ");
-					//	game.log("the current max score is " + maxScore + " and this will generate a score of " + score);	
-					//}
-					
-					
-					
-					//game.log("if we went " + d + " we would have a score of " + score);
-					if(score == maxScore){
-						maxScoreDir.push(d);
-					} else if(score > maxScore){
-						maxScoreDir = [d];
-						maxScore = score;
-					}
-				}
-			}
-			
-			//game.log("best score is " + maxScore + " in teh direction of " + maxScoreDir);
-			
-			var r = Math.floor(Math.random()*maxScoreDir.length);
-			
-			var maxScoreDirFinal = maxScoreDir[r];
-			
-			//game.log("ended up choosing " + maxScoreDirFinal + " with index of " + r);
-
-			
-			// UPDATE DISTRO
-			myAnt.distro.count +=1;
-			myAnt.distro[maxScoreDirFinal] +=1;
-			
-			//game.log("distro count " + myAnt.distro.count);
-			
-			// CHOOSE A RANDOM FROM THE SAMPLE
-			
-			var theCount = Math.floor(Math.random()*(myAnt.distro.count));
-			//game.log("randomly chose " + theCount);
-			var moveDir="W";
-			for(var dI in directions){
-				var d= directions[dI];
-				
-				theCount -= myAnt.distro[d];
-				//game.log("count down to " + theCount);
-				if(theCount < 0){
-					moveDir = d;
-					break;
-					
-				}
-			}
-			
-			//game.log("randomly chose to go " + d);
-			this.proposeMove(myAnt,moveDir);
-		 
-		 
-		 }
-		
-		game.log("had time to evaluate " + evalCount + " scenarios");
-		
-		*/
-
-		this.executeMoves();
-		//for(var antI in activeFriendAnts){
-		//	var ant = activeFriendAnts[antI];
-		//	game.log("Proposed Move Distro for ant " + ant + " at " + ant.row + "-" + ant.col + " is " + util.inspect(ant.distro) + " but ended up chosing " + this.proposedMoves[ant].dir);
-		//}
-		
-		game.finishTurn();
-    },
-    'onEnd': function() {
-    
-    },
+	},
 	
 	'executeMoves': function(){
 		game.log("Executing the moves now");
 		for(var moveI in this.proposedMoves){
 			var move = this.proposedMoves[moveI];
 			if(move.ant.owner == 0){
-				try{
-			
-					//game.log("issuing if i can send ant " + move.ant + " at " + move.ant.row + "-" + move.ant.col + " in the direction of " + move.dir);
-				
+				try{				
 					game.issueOrder(move.ant.row,move.ant.col,move.dir);	
 				} catch (e){
 					game.log("error executing move");
@@ -1228,6 +705,7 @@ var bot = {
 	
 	'buildMap': function(goals,maptobuild,goalsize,attractor,diffusion,blend,validtile, forceValue, exec) {
 			
+		var directions = this.generateRandomDirections();
 		var tmpMap = [];
 		var multiplier = 1;
 		if(!attractor){
@@ -1275,25 +753,16 @@ var bot = {
 	
 		var totalCalcs = 0;
 		
-		var directions = this.generateRandomDirections();
         while(openHeap.size() > 0) {
 			totalCalcs++;
 
-        	// Grab the lowest f(x) to process next.  Heap keeps this sorted for us.
             var currentNode = openHeap.pop();
-			
-			//game.log("processing " + currentNode.row + " " + currentNode.col + " " + currentNode.size);
-			
-			// get neighbors.
-			// before putting neighbor on the stack, figure out his weight.
-			
+
 			for(var dirI in directions){
 				var dir = directions[dirI];
 				var nodeInDir = game.tileInDirection(currentNode.row,currentNode.col,dir);
 				var node = {"row":nodeInDir.row,"col":nodeInDir.col, "size":0.0};
-				//if(game.enemyHills[node.row + "-" + node.col]){
-				//	game.log("working enemy ant hill: " + visitedTiles[node.row + "-" + node.col] + " and valid? " + validtile(node.row, node.col));
-				//}
+
 				if(!visitedTiles[node.row + "-" + node.col] && validtile(node.row, node.col)){
 					for(var dirXI in directions){
 						var dirX = directions[dirXI];
@@ -1309,9 +778,6 @@ var bot = {
 						
 					}
 					
-					//if(game.enemyHills[node.row + "-" + node.col]){
-					//	game.log("setting enemy hill to " + node.size);
-					//}
 					if(forceValue && forceValue(node.row,node.col)) {
 						tmpMap[node.row][node.col] = forceValue(node.row,node.col);
 					} else {
@@ -1319,16 +785,12 @@ var bot = {
 					}
 					maptobuild[node.row][node.col] = blend(maptobuild[node.row][node.col], node.size*multiplier);
 					
-					//if(game.enemyHills[node.row + "-" + node.col]){
-					//	game.log("done setting real stuff, to " + maptobuild[node.row][node.col]);
-					//}
 					visitedTiles[node.row + "-" + node.col] = 1;
 					
 					if(exec)
 						exec(node.row,node.col, node.size);
 						
 					if(node.size > 0){
-						//game.log("adding " + node.row + "-" + node.col + " to queue with diffusion " + node.size);
 						openHeap.push(node);
 					}
 				}
@@ -1358,8 +820,6 @@ var bot = {
 	},
 	"calculateLocalBattleOutcome": function(ant, ignore){
 		var results = {"friends":0,"enemies":0, "affected":[]};
-		
-		//game.log("calculating local battle outcome for ant " + ant.debugString());
 		
 		if(!ignore){
 			ignore = {};
@@ -1395,10 +855,6 @@ var bot = {
 		
 		if(dead){
 			results.friends += 1;
-			//game.log("ant " + ant.debugString() + " will die ");
-		} else {
-			
-			//game.log("ant " + ant.debugString() + " will live ");
 		}
 		
 		return results; 
@@ -1427,8 +883,6 @@ var bot = {
 					});
 			}
 		}
-
-		game.viz_setLineColor(255,0,0,.5);
 
 		for(var antI in potentialBattleAnts){
 			var ant = potentialBattleAnts[antI].ant;
@@ -1489,19 +943,8 @@ var bot = {
 			delete this.conflicts[ant];
 		}
 	},
-	/*
-	"commitMove":function(ant,direction){
-		
-		ant.distro.direction +=1;
-		ant.distro.count +=1;
-		
-		this.proposeMove(ant,direction);
-	},
-	*/
-	"proposeMove":function(ant,direction){
-		//game.log("proposeMove: proposing if i can send ant " + ant + " at " + ant.row + "-" + ant.col + " in the direction of " + direction);
-		//if(this.proposedMove[ant])delete this.proposedMove[ant];
 
+	"proposeMove":function(ant,direction){
 		var tileInDir = game.tileInDirection(ant.row,ant.col,direction);
 		this.proposedMoves[ant]=({"ant":ant,"dir":direction,"nexttile":{"col":tileInDir.col,"row":tileInDir.row}});
 		
@@ -1513,7 +956,6 @@ var bot = {
 	"validMove":function(ant,direction){
 	
 		try{
-			//game.log("checking if i can send ant " + ant + " at " + ant.row + "-" + ant.col + " in the direction of " + direction);
 			var tileInDir = game.tileInDirection(ant.row,ant.col,direction);
 			return (this.proposedMovesMap[tileInDir.row][tileInDir.col] == null || this.proposedMovesMap[tileInDir.row][tileInDir.col] == ant) && game.map[tileInDir.row][tileInDir.col].type === game.landTypes.LAND;
 		} catch (e){
@@ -1534,80 +976,3 @@ function randomKey(obj) {
            ret = key;
     return ret;
 }
-
-
-/*
-		var _search = [];
-		
-		for(var r=0;r<game.config.rows;r++){
-			_search[r] = [];
-			for(var c=0;c<game.config.cols;c++){
-				_search[r][c]=!game.passable(r,c);
-			}
-		}
-		
-		var asg = new AStarGraph(_search);
-		//game.log(asg);
-			
-		var start = asg.nodes[8][16];
-		var end = asg.nodes[0][7];
-	
-		*/
-		//game.log(util.inspect(start));
-		//game.log(util.inspect(end));
-		
-		
-		//var val = astar.search({"row":6,"col":6},{"row":56,"col":54});
-		//game.log(util.inspect(val));
-		
-		
-		//game.viz_setFillColor(0,0,0,1.0);
-		//game.viz_setLineColor(0,0,0,1.0);
-		//for(var i=0;i<val.length;i++){
-		//	game.viz_tile({"row":val[i].x,"col":val[i].y},0);
-		//}
-		
-		/*
-		for (var antI in game.myAnts) {
-			var ant = game.myAnts[antI];
-			var path = astar.search(ant,{"row":64,"col":54}, true);
-			game.log("sending ant " + ant.row + "-" + ant.col + " on a path of length " + path.length);
-			ant.setDestination(path);
-			game.viz_setLineColor(0,0,0,1.0);
-			for(var i=0;i<path.length;i++){
-				game.viz_tile({"row":path[i].x,"col":path[i].y},0);
-			}
-			
-			
-			game.issueOrder(ant.row, ant.col, ant.getNextMove());
-		
-		}
-		
-		
-		game.finishTurn();
-		return;
-		
-		*/
-		
-		
-		//var val = astar.search({"row":6,"col":6},{"row":20,"col":5}, true,12);
-		//game.log(util.inspect(val));
-		
-				/*
-				game.viz_setFillColor(255,25,0,.9);
-			for(var hI in game.enemyHills){
-				var h = game.enemyHills[hI];
-				
-				game.viz_tile({"row":h.row,"col":h.col},0);
-				
-			}
-			
-				game.viz_setFillColor(25,255,0,.9);
-			for(var hI in game.myHills){
-				var h = game.myHills[hI];
-				
-				game.viz_tile({"row":h.row,"col":h.col},0);
-				
-			}
-		*/
-		
